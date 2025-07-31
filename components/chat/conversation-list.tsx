@@ -1,10 +1,12 @@
 import { cn } from '@/lib/utils';
 import { Conversation } from '@/types/chat';
+import { format } from 'date-fns';
+import { MessageCircle } from 'lucide-react';
 
 interface ConversationListProps {
   conversations: Conversation[];
   activeConversationId: string;
-  setActiveConversationId: (id: string) => void;
+  setActiveConversationId: (id: string | null) => void;
 }
 
 export function ConversationList({ 
