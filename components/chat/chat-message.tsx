@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { Message } from '@/types/chat';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import Image from 'next/image';
 
 interface ChatMessageProps {
   message: Message;
@@ -16,7 +17,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
     )}>
       {!message.isUser && (
         <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-          <Bot size={16} className="text-white" />
+          <Image height={32} width={32} src="/avatar.png" alt="Bot Avatar" className="rounded-full" />
         </div>
       )}
       <div className={cn(
@@ -69,7 +70,7 @@ export function LoadingMessage() {
   return (
     <div className="flex gap-4">
       <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-        <Bot size={16} className="text-white" />
+        <Image height={32} width={32} src="/avatar.png" alt="Bot Avatar" className="rounded-full" />
       </div>
       <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
         <div className="flex items-center gap-2">

@@ -59,7 +59,7 @@ export function ChatInput({ onSendMessage, isLoading, disabled = false }: ChatIn
           </div>
         </div>
         <div className="text-center text-xs text-white/40 mt-2 space-y-1">
-          <p>Kanoon-Sathi can make mistakes. Check important info.</p>
+          <p>Kanoon-Sathi can make mistakes. Check legal documents for important details.</p>
         </div>
       </div>
     </div>

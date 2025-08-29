@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ChatSidebar, ChatArea, ChatInput } from '@/components/chat';
 import { Message, Conversation } from '@/types/chat';
+import Image from 'next/image';
 
 // Helper function to extract a title from the message content
 const extractTitleFromMessage = (content: string): string => {
@@ -273,6 +274,7 @@ export default function ChatPage() {
         {/* Top Bar */}
         <div className="h-12 flex items-center justify-between px-4 border-b border-white/10 bg-[#0f0f0f]/80 backdrop-blur-xl">
           <div className="flex items-center gap-2">
+            <Image height={32} width={32} src="/avatar.png" alt="Bot Avatar" className="rounded-full" />
             <h1 className="font-medium text-white">Kanoon-Sathi</h1>
             <div className="w-3 h-3 bg-green-500 rounded-full"></div>
           </div>
