@@ -1,20 +1,18 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ChatSidebar, ChatArea, ChatInput } from '@/components/chat';
-import { Message, Conversation } from '@/types/chat';
+import { Message, Conversation, AuthenticatedChat, AuthenticatedMessage } from '@/types/chat';
+import { useAuth } from '@/contexts/auth-context';
+import { chatApiService } from '@/lib/chat-api';
 import Image from 'next/image';
 
 // Helper function to extract a title from the message content
 const extractTitleFromMessage = (content: string): string => {
-  // Try to get the first line or first 30 characters for a title
   const firstLine = content.split('\n')[0].trim();
   if (firstLine.length === 0) return 'New Chat';
   
-  // Remove markdown headers if present
   const withoutHeaders = firstLine.replace(/^#+\s+/, '');
-  
-  // Truncate if too long
   return withoutHeaders.length > 30 
     ? withoutHeaders.substring(0, 30) + '...'
     : withoutHeaders;
@@ -22,13 +20,12 @@ const extractTitleFromMessage = (content: string): string => {
 
 // Helper function to truncate message for preview
 const truncateMessage = (content: string): string => {
-  // Remove markdown and truncate
   const plainText = content
-    .replace(/#+\s+/g, '') // Remove headers
-    .replace(/\*\*/g, '')  // Remove bold
-    .replace(/\*/g, '')    // Remove italic
-    .replace(/`{3}[\s\S]*`{3}/g, '[Code Block]') // Replace code blocks
-    .replace(/`([^`]+)`/g, '$1') // Remove inline code ticks but keep content
+    .replace(/#+\s+/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/`{3}[\s\S]*`{3}/g, '[Code Block]')
+    .replace(/`([^`]+)`/g, '$1')
     .trim();
     
   return plainText.length > 60
@@ -36,124 +33,142 @@ const truncateMessage = (content: string): string => {
     : plainText;
 };
 
+// Convert authenticated chat to conversation format
+const convertAuthChatToConversation = (chat: AuthenticatedChat): Conversation => {
+  const messages: Message[] = (chat.messages || []).map((msg) => ({
+    id: msg.id,
+    content: msg.content,
+    isUser: msg.sender === 'user',
+    timestamp: new Date(msg.created_at),
+  }));
+
+  return {
+    id: chat.id,
+    title: chat.title || extractTitleFromMessage(chat.lastMessage?.content || 'New Chat'),
+    messages,
+    lastMessage: chat.lastMessage ? new Date(chat.lastMessage.created_at) : new Date(chat.updated_at),
+    lastMessageText: chat.lastMessage ? truncateMessage(chat.lastMessage.content) : '',
+  };
+};
+
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-
+  
+  const { user, isAuthenticated, token, isLoading: authLoading } = useAuth();
   const activeConversation = conversations.find(c => c.id === activeConversationId);
 
-    // Fetch conversation list on component mount
-  useEffect(() => {
-    fetchConversationList();
-    // We want this to run only once on component mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Fetch chat history when activeConversationId changes
-  useEffect(() => {
-    if (activeConversationId) {
-      fetchChatHistory(activeConversationId);
-    }
-  }, [activeConversationId]);
-
-  // Fetch all conversations
-  const fetchConversationList = async () => {
+  const loadConversations = useCallback(async () => {
+    setIsInitialLoading(true);
     try {
-      const response = await fetch('http://localhost:7777/getConversationList', {
-        method: 'POST',  // Changed to GET as per API documentation
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': '1234567890'
+      if (isAuthenticated && token) {
+        // Load authenticated user's chats
+        const response = await chatApiService.getChats(token);
+        const convs = response.data.map(convertAuthChatToConversation);
+        setConversations(convs);
+        
+        if (convs.length > 0 && !activeConversationId) {
+          setActiveConversationId(convs[0].id);
         }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch conversations');
+      } else {
+        // Load guest conversations
+        const guestConvs = await chatApiService.getGuestConversationList();
+        const convs = guestConvs.map((item) => ({
+          id: item.chatroomId,
+          title: extractTitleFromMessage(item.lastMessage.content),
+          messages: [],
+          lastMessage: new Date(),
+          lastMessageText: truncateMessage(item.lastMessage.content)
+        }));
+        
+        setConversations(convs);
+        
+        if (convs.length > 0 && !activeConversationId) {
+          setActiveConversationId(convs[0].id);
+        }
       }
-
-      const data = await response.json();
-      
-      // Transform API response to our Conversation type
-      const conversationList = data.result.map((item: any) => ({
-        id: item.chatroomId,
-        title: extractTitleFromMessage(item.lastMessage.content),
-        messages: [],
-        lastMessage: new Date(), // We don't have timestamp in the response, use current date
-        lastMessageText: truncateMessage(item.lastMessage.content)
-      }));
-
-      setConversations(conversationList);
-      
-      // Set the first conversation as active if we have conversations and none is active
-      if (conversationList.length > 0 && !activeConversationId) {
-        setActiveConversationId(conversationList[0].id);
-      }
-
-      setIsInitialLoading(false);
     } catch (error) {
-      console.error('Error fetching conversation list:', error);
+      console.error('Error loading conversations:', error);
+    } finally {
       setIsInitialLoading(false);
     }
-  };
+  }, [isAuthenticated, token, activeConversationId]);
 
-  // Fetch chat history for a specific conversation
-  const fetchChatHistory = async (conversationId: string) => {
+  const loadChatHistory = useCallback(async (conversationId: string) => {
     try {
       setIsLoading(true);
-      const response = await fetch('http://localhost:7777/getChatHistory', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': '1234567890'
-        },
-        body: JSON.stringify({
-          data:{
-          chatroomId: conversationId
-        }
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch chat history');
-      }
-
-      const data = await response.json();
       
-      // Transform API messages to our Message type
-      const messages: Message[] = data.result.map((apiMsg: any, index: number) => ({
-        id: `hist-${index}`,
-        content: apiMsg.content,
-        isUser: apiMsg.role === 'user',
-        timestamp: new Date() // We don't have timestamp from API, use current date
-      }));
+      if (isAuthenticated && token) {
+        // Load authenticated chat with messages
+        const response = await chatApiService.getChat(token, conversationId);
+        const conv = convertAuthChatToConversation(response.data);
+        
+        setConversations(prev => prev.map(c => 
+          c.id === conversationId ? conv : c
+        ));
+      } else {
+        // Load guest chat history
+        const history = await chatApiService.getGuestChatHistory(conversationId);
+        const messages: Message[] = history.map((msg, index) => ({
+          id: `hist-${index}`,
+          content: msg.content,
+          isUser: msg.role === 'user',
+          timestamp: new Date()
+        }));
 
-      // Update the conversation with fetched messages
-      setConversations(prev => prev.map(conv => 
-        conv.id === conversationId 
-          ? { ...conv, messages }
-          : conv
-      ));
+        setConversations(prev => prev.map(conv => 
+          conv.id === conversationId 
+            ? { ...conv, messages }
+            : conv
+        ));
+      }
     } catch (error) {
-      console.error('Error fetching chat history:', error);
+      console.error('Error loading chat history:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isAuthenticated, token]);
 
-  const createNewConversation = () => {
-    // We'll create a conversation on the server when the first message is sent
-    // For now, just create a local temporary conversation
-    const tempId = `temp-${Date.now()}`;
-    const newConversation: Conversation = {
-      id: tempId,
-      title: `New Chat`,
-      messages: [],
-      lastMessage: new Date(),
-    };
-    setConversations([newConversation, ...conversations]);
-    setActiveConversationId(tempId);
+  // Load conversations when auth state changes or on mount
+  useEffect(() => {
+    if (!authLoading) {
+      loadConversations();
+    }
+  }, [authLoading, loadConversations]);
+
+  // Fetch chat history when activeConversationId changes
+  useEffect(() => {
+    if (activeConversationId && !isInitialLoading) {
+      loadChatHistory(activeConversationId);
+    }
+  }, [activeConversationId, isInitialLoading, loadChatHistory]);
+
+  const createNewConversation = async () => {
+    if (isAuthenticated && token) {
+      // Create authenticated chat
+      try {
+        const response = await chatApiService.createChat(token);
+        const newConv = convertAuthChatToConversation(response.data);
+        
+        setConversations(prev => [newConv, ...prev]);
+        setActiveConversationId(newConv.id);
+      } catch (error) {
+        console.error('Error creating chat:', error);
+      }
+    } else {
+      // Create temporary conversation for guests
+      const tempId = `temp-${Date.now()}`;
+      const newConversation: Conversation = {
+        id: tempId,
+        title: 'New Chat',
+        messages: [],
+        lastMessage: new Date(),
+      };
+      setConversations([newConversation, ...conversations]);
+      setActiveConversationId(tempId);
+    }
   };
 
   const handleSendMessage = async (message: string) => {
@@ -165,16 +180,29 @@ export default function ChatPage() {
     // Create a new conversation if none is active
     let currentConversationId = activeConversationId;
     if (!currentConversationId) {
-      const tempId = `temp-${Date.now()}`;
-      const newConversation: Conversation = {
-        id: tempId,
-        title: message.slice(0, 30) + (message.length > 30 ? '...' : ''),
-        messages: [],
-        lastMessage: timestamp,
-      };
-      setConversations(prev => [newConversation, ...prev]);
-      currentConversationId = tempId;
-      setActiveConversationId(tempId);
+      if (isAuthenticated && token) {
+        try {
+          const response = await chatApiService.createChat(token, extractTitleFromMessage(message));
+          const newConv = convertAuthChatToConversation(response.data);
+          setConversations(prev => [newConv, ...prev]);
+          currentConversationId = newConv.id;
+          setActiveConversationId(newConv.id);
+        } catch (error) {
+          console.error('Error creating chat:', error);
+          return;
+        }
+      } else {
+        const tempId = `temp-${Date.now()}`;
+        const newConversation: Conversation = {
+          id: tempId,
+          title: extractTitleFromMessage(message),
+          messages: [],
+          lastMessage: timestamp,
+        };
+        setConversations(prev => [newConversation, ...prev]);
+        currentConversationId = tempId;
+        setActiveConversationId(tempId);
+      }
     }
 
     const userMessage: Message = {
@@ -199,30 +227,17 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:7777/autonomousAIFlow', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': '1234567890'
-        },
-        body: JSON.stringify({
-          data:{
-            chatroomId: currentConversationId,
-            text: message
-        }
-        }),
-      });
 
-      if (!response.ok) {
-        throw new Error('Failed to get AI response');
-      }
-
-      const data = await response.json();
+      // Get AI response
+      const aiResponse = await chatApiService.sendToAI(
+        message, 
+        currentConversationId, 
+        isAuthenticated ? user?.id : undefined
+      );
       
       const aiMessage: Message = {
         id: `ai-${Date.now()}`,
-        // The API returns markdown content directly in the result field
-        content: data.result || 'Sorry, I couldn\'t process your request.',
+        content: aiResponse,
         isUser: false,
         timestamp: new Date(),
       };
@@ -234,7 +249,7 @@ export default function ChatPage() {
               ...conv, 
               messages: [...conv.messages, aiMessage], 
               lastMessage: new Date(),
-              lastMessageText: aiMessage.content.substring(0, 50) + (aiMessage.content.length > 50 ? '...' : '')
+              lastMessageText: truncateMessage(aiResponse)
             }
           : conv
       ));
@@ -258,6 +273,17 @@ export default function ChatPage() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="flex h-screen bg-[#0f0f0f] text-white overflow-hidden items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+          <p className="text-white/60">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-[#0f0f0f] text-white overflow-hidden">
       {/* Sidebar */}
@@ -278,6 +304,12 @@ export default function ChatPage() {
             <h1 className="font-medium text-white">Kanoon-Sathi</h1>
             <div className="w-3 h-3 bg-green-500 rounded-full"></div>
           </div>
+          
+          {isAuthenticated && (
+            <div className="text-sm text-white/60">
+              Signed in as {user?.username}
+            </div>
+          )}
         </div>
 
         {/* Messages Area */}
@@ -299,7 +331,7 @@ export default function ChatPage() {
         <ChatInput 
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
-          disabled={isInitialLoading || !activeConversationId}
+          disabled={isInitialLoading}
         />
       </div>
     </div>

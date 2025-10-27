@@ -41,13 +41,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 h1: ({ node, ...props }) => <h1 {...props} className="text-xl font-bold my-3" />,
                 h2: ({ node, ...props }) => <h2 {...props} className="text-lg font-bold my-3" />,
                 h3: ({ node, ...props }) => <h3 {...props} className="text-md font-bold my-2" />,
-                code: ({ node, inline, ...props }) => 
-                  inline ? (
-                    <code {...props} className="bg-white/10 rounded px-1 py-0.5" />
-                  ) : (
-                    <code {...props} className="block bg-white/10 rounded p-2 my-2 overflow-x-auto" />
-                  ),
                 pre: ({ node, ...props }) => <pre {...props} className="bg-transparent p-0 my-2" />,
+                code: ({ node, ...props }) => <code {...props} className="bg-white/10 rounded px-1 py-0.5 font-mono text-sm" />,
                 blockquote: ({ node, ...props }) => <blockquote {...props} className="border-l-4 border-white/30 pl-3 my-3 italic" />,
                 hr: ({ node, ...props }) => <hr {...props} className="border-white/20 my-4" />
               }}
